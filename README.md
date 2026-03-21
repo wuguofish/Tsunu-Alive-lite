@@ -5,7 +5,7 @@
 Tsunu Alive Lite 是 [Tsunu Alive](https://github.com/wuguofish/Tsunu-Alive) 的輕量版本。直接嵌入 xterm.js 終端機，讓你使用 Claude Code 的完整原生功能，同時有阿宇 Avatar 在旁邊陪你。
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Tsunu Alive Lite" width="700">
+  <img src="docs/screenshot.png" alt="Tsunu Alive Lite" width="800">
 </p>
 
 ---
