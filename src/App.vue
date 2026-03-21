@@ -10,6 +10,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 
+// === 版本號（Vite define 注入的全域常數） ===
+const appVersion = __APP_VERSION__
+
 // === 階段狀態 ===
 type AppPhase = 'launch' | 'running'
 const phase = ref<AppPhase>('launch')
@@ -541,7 +544,7 @@ onUnmounted(() => {
         <span v-if="contextUsage.total > 0" class="status-item status-tag context-tag">
           📊 {{ formatTokens(contextUsage.total) }} tokens
         </span>
-        <span class="status-item" style="margin-left: auto;">v{{ __APP_VERSION__ }}</span>
+        <span class="status-item" style="margin-left: auto;">v{{ appVersion }}</span>
       </div>
     </template>
   </div>
