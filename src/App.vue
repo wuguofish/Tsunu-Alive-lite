@@ -47,6 +47,67 @@ const contextUsage = ref({ input: 0, output: 0, cacheRead: 0, cacheCreate: 0, to
 const modelName = ref('')
 const sessionId = ref('')
 
+// === 貼上圖片 ===
+interface AttachedImage {
+  id: string
+  path: string
+  name: string
+  previewUrl?: string
+  isLoading: boolean
+}
+const attachedImages = ref<AttachedImage[]>([])
+let imageIdCounter = 0
+
+async function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+
+  let imageFile: File | null = null
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      imageFile = item.getAsFile()
+      break
+    }
+  }
+  if (!imageFile) return
+
+  e.preventDefault()
+
+  const id = `img_${++imageIdCounter}_${Date.now()}`
+  const timestamp = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const ext = imageFile.type.split('/')[1] || 'png'
+  const name = `截圖_${timestamp}.${ext}`
+
+  attachedImages.value.push({ id, path: '', name, isLoading: true })
+
+  try {
+    const previewUrl = URL.createObjectURL(imageFile)
+    const item = attachedImages.value.find(img => img.id === id)
+    if (item) item.previewUrl = previewUrl
+
+    const arrayBuffer = await imageFile.arrayBuffer()
+    const pngData = Array.from(new Uint8Array(arrayBuffer))
+    const filePath = await invoke<string>('save_temp_image_png', { pngData })
+
+    if (item) { item.path = filePath; item.isLoading = false }
+  } catch (err) {
+    console.error('Failed to process clipboard image:', err)
+    const index = attachedImages.value.findIndex(img => img.id === id)
+    if (index !== -1) attachedImages.value.splice(index, 1)
+  }
+}
+
+async function removeImage(id: string) {
+  const index = attachedImages.value.findIndex(img => img.id === id)
+  if (index === -1) return
+  const img = attachedImages.value[index]
+  if (img.previewUrl) URL.revokeObjectURL(img.previewUrl)
+  if (img.path) {
+    try { await invoke('cleanup_temp_image', { filePath: img.path }) } catch { /* ignore */ }
+  }
+  attachedImages.value.splice(index, 1)
+}
+
 // === Terminal & PTY ===
 const terminalRef = ref<HTMLDivElement>()
 const inputText = ref('')
@@ -332,9 +393,33 @@ async function launchSession() {
 }
 
 function sendMessage() {
-  if (!pty || !inputText.value.trim()) return
-  pty.write(inputText.value + '\r')
+  if (!pty) return
+
+  // 有附加圖片時，把路徑加到訊息前面
+  const imagePaths = attachedImages.value
+    .filter(img => img.path && !img.isLoading)
+    .map(img => img.path)
+
+  let message = inputText.value.trim()
+
+  // 沒有文字也沒有圖片就不送
+  if (!message && imagePaths.length === 0) return
+
+  // 圖片路徑用空格隔開放在訊息前面
+  if (imagePaths.length > 0) {
+    const paths = imagePaths.join(' ')
+    message = message ? `${paths} ${message}` : paths
+  }
+
+  pty.write(message + '\r')
   inputText.value = ''
+
+  // 清理預覽（不刪檔案，Claude CLI 需要讀取）
+  attachedImages.value.forEach(img => {
+    if (img.previewUrl) URL.revokeObjectURL(img.previewUrl)
+  })
+  attachedImages.value = []
+
   setAvatarState('thinking')
 }
 
@@ -515,14 +600,27 @@ onUnmounted(() => {
         <span>{{ busyText }}</span>
       </div>
 
+      <!-- 圖片預覽列 -->
+      <div v-if="attachedImages.length > 0" class="image-preview-bar">
+        <div v-for="img in attachedImages" :key="img.id" class="image-preview-item">
+          <div v-if="img.isLoading" class="image-loading">載入中...</div>
+          <template v-else>
+            <img v-if="img.previewUrl" :src="img.previewUrl" :alt="img.name" class="image-thumb" />
+            <span class="image-name">{{ img.name }}</span>
+            <button class="image-remove" @click="removeImage(img.id)">&times;</button>
+          </template>
+        </div>
+      </div>
+
       <!-- 輸入框 -->
       <div class="input-bar">
         <textarea
           v-model="inputText"
           class="input-textarea"
-          placeholder="輸入訊息... (Enter 送出, Shift+Enter 換行)"
+          placeholder="輸入訊息... (Enter 送出, Shift+Enter 換行, Ctrl+V 貼圖)"
           rows="1"
           @keydown="handleKeydown"
+          @paste="handlePaste"
         />
         <button
           class="send-btn"
@@ -842,6 +940,63 @@ html, body, #app {
   color: #7aa2f7;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+/* 圖片預覽 */
+.image-preview-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 0 12px;
+  background: #232436;
+  border-top: 1px solid #33467c;
+  overflow-x: auto;
+}
+
+.image-preview-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #1a1b2e;
+  border: 1px solid #33467c;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.image-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.image-name {
+  font-size: 11px;
+  color: #888;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-loading {
+  font-size: 11px;
+  color: #7aa2f7;
+}
+
+.image-remove {
+  background: none;
+  border: none;
+  color: #f7768e;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.image-remove:hover {
+  color: #ff99aa;
 }
 
 /* 輸入框 */

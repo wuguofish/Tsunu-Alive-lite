@@ -285,6 +285,44 @@ async fn stop_jsonl_watcher(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 儲存剪貼簿圖片到暫存檔案
+#[tauri::command]
+fn save_temp_image_png(png_data: Vec<u8>) -> Result<String, String> {
+    use std::io::Write;
+
+    let temp_dir = std::env::temp_dir().join("tsunu_alive_lite");
+    if !temp_dir.exists() {
+        fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    }
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S_%3f");
+    let filename = format!("clipboard_{}.png", timestamp);
+    let file_path = temp_dir.join(&filename);
+
+    let mut file = fs::File::create(&file_path)
+        .map_err(|e| format!("Failed to create file: {}", e))?;
+    file.write_all(&png_data)
+        .map_err(|e| format!("Failed to write PNG data: {}", e))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+/// 清理暫存圖片
+#[tauri::command]
+fn cleanup_temp_image(file_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&file_path);
+    let temp_dir = std::env::temp_dir().join("tsunu_alive_lite");
+    if !path.starts_with(&temp_dir) {
+        return Err("Cannot delete file outside temp directory".to_string());
+    }
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|e| format!("Failed to delete temp file: {}", e))?;
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -294,6 +332,8 @@ pub fn run() {
             load_sessions,
             start_jsonl_watcher,
             stop_jsonl_watcher,
+            save_temp_image_png,
+            cleanup_temp_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
