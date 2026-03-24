@@ -122,7 +122,7 @@ fn process_jsonl_line(line: &str, app: &AppHandle) {
                     let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     match item_type {
                         "thinking" => { let _ = app.emit("avatar-state", "thinking"); }
-                        "tool_use" => { let _ = app.emit("avatar-state", "working"); }
+                        "tool_use" => { let _ = app.emit("avatar-state", "asking"); }
                         "text" => { let _ = app.emit("avatar-state", "idle"); }
                         _ => {}
                     }
