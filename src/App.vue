@@ -30,7 +30,9 @@ const sessionsLoading = ref(false)
 const launchMode = ref<'new' | 'resume'>('new')
 const thinkingMode = ref<'adaptive' | 'enabled' | 'disabled'>('adaptive')
 const editMode = ref<'default' | 'acceptEdits' | 'bypassPermissions'>('default')
+const effortLevel = ref<'default' | 'low' | 'medium' | 'high'>('default')
 const discordChannel = ref(false)
+const lineChannel = ref(false)
 const resumeSessionId = ref('')
 const workingDir = ref('D:\\game\\tsunu_alive_lite')
 
@@ -38,7 +40,9 @@ const workingDir = ref('D:\\game\\tsunu_alive_lite')
 const activeParams = ref({
   thinkingMode: '',
   editMode: '',
+  effort: '',
   discord: false,
+  line: false,
   sessionType: '',
 })
 
@@ -312,7 +316,9 @@ async function launchSession() {
   activeParams.value = {
     thinkingMode: thinkingMode.value,
     editMode: editMode.value,
+    effort: effortLevel.value,
     discord: discordChannel.value,
+    line: lineChannel.value,
     sessionType: launchMode.value === 'new' ? '新對話' : '續接對話',
   }
 
@@ -338,8 +344,16 @@ async function launchSession() {
     args.push('--permission-mode', editMode.value)
   }
 
+  if (effortLevel.value !== 'default') {
+    args.push('--effort', effortLevel.value)
+  }
+
   if (discordChannel.value) {
     args.push('--channels', 'plugin:discord@claude-plugins-official')
+  }
+
+  if (lineChannel.value) {
+    args.push('--dangerously-load-development-channels', 'server:line')
   }
 
   args.push('--append-system-prompt', [
@@ -570,6 +584,29 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Effort -->
+        <div class="option-group">
+          <label class="option-label">Effort</label>
+          <div class="option-buttons">
+            <button
+              :class="['opt-btn', { active: effortLevel === 'default' }]"
+              @click="effortLevel = 'default'"
+            >Auto</button>
+            <button
+              :class="['opt-btn', { active: effortLevel === 'low' }]"
+              @click="effortLevel = 'low'"
+            >Low</button>
+            <button
+              :class="['opt-btn', { active: effortLevel === 'medium' }]"
+              @click="effortLevel = 'medium'"
+            >Medium</button>
+            <button
+              :class="['opt-btn', { active: effortLevel === 'high' }]"
+              @click="effortLevel = 'high'"
+            >High</button>
+          </div>
+        </div>
+
         <!-- Discord -->
         <div class="option-group">
           <label class="option-label">Discord Channel</label>
@@ -582,6 +619,21 @@ onUnmounted(() => {
               :class="['opt-btn discord-btn', { active: discordChannel }]"
               @click="discordChannel = true"
             >🎮 開啟</button>
+          </div>
+        </div>
+
+        <!-- LINE Channel (Dev) -->
+        <div class="option-group">
+          <label class="option-label">LINE Channel <span class="dev-badge">DEV</span></label>
+          <div class="option-buttons">
+            <button
+              :class="['opt-btn', { active: !lineChannel }]"
+              @click="lineChannel = false"
+            >關閉</button>
+            <button
+              :class="['opt-btn line-btn', { active: lineChannel }]"
+              @click="lineChannel = true"
+            >💬 開啟</button>
           </div>
         </div>
 
@@ -655,7 +707,9 @@ onUnmounted(() => {
         <span class="status-item status-tag">{{ activeParams.sessionType }}</span>
         <span class="status-item status-tag">🧠 {{ activeParams.thinkingMode }}</span>
         <span class="status-item status-tag">✏️ {{ activeParams.editMode }}</span>
+        <span v-if="activeParams.effort !== 'default'" class="status-item status-tag">⚡ {{ activeParams.effort }}</span>
         <span v-if="activeParams.discord" class="status-item status-tag discord-tag">🎮 Discord</span>
+        <span v-if="activeParams.line" class="status-item status-tag line-tag">💬 LINE</span>
         <span v-if="modelName" class="status-item status-tag">🤖 {{ modelName }}</span>
         <span v-if="contextUsage.total > 0" class="status-item status-tag context-tag">
           📊 {{ formatTokens(contextUsage.total) }} tokens
@@ -1093,6 +1147,28 @@ html, body, #app {
 .discord-tag {
   background: #5865f233;
   color: #5865f2;
+}
+
+.line-tag {
+  background: #06c75533;
+  color: #06c755;
+}
+
+.line-btn.active {
+  background: #06c755;
+  border-color: #06c755;
+  color: white;
+}
+
+.dev-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: #e0af6833;
+  color: #e0af68;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+  letter-spacing: 0.5px;
 }
 
 .context-tag {
