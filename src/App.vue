@@ -116,6 +116,7 @@ async function removeImage(id: string) {
 const terminalRef = ref<HTMLDivElement>()
 const inputText = ref('')
 const isRunning = ref(false)
+const isLaunching = ref(false)
 
 let terminal: Terminal
 let fitAddon: FitAddon
@@ -312,6 +313,9 @@ function initTerminal() {
 
 // === 啟動 Claude CLI ===
 async function launchSession() {
+  if (isLaunching.value) return
+  isLaunching.value = true
+
   // 記錄啟動參數（之後變唯讀）
   activeParams.value = {
     thinkingMode: thinkingMode.value,
@@ -638,7 +642,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 啟動按鈕 -->
-        <button class="launch-btn" @click="launchSession">
+        <button class="launch-btn" :disabled="isLaunching" @click="launchSession">
           🚀 啟動 Claude
         </button>
       </div>
