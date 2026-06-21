@@ -3,8 +3,19 @@ use std::path::PathBuf;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
+
+/// 管理 JSONL watcher 的停止旗標，允許安全替換而不重複呼叫 app.manage()
+struct WatcherControl {
+    stop_flag: Mutex<Option<Arc<AtomicBool>>>,
+}
+
+impl Default for WatcherControl {
+    fn default() -> Self {
+        WatcherControl { stop_flag: Mutex::new(None) }
+    }
+}
 
 /// 工作目錄路徑轉 Claude 專案目錄名稱
 fn working_dir_to_project_dir_name(working_dir: &str) -> String {
@@ -190,13 +201,16 @@ async fn start_jsonl_watcher(
     working_dir: String,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    // 停止之前的 watcher
-    if let Some(flag) = app.try_state::<Arc<AtomicBool>>() {
-        flag.store(true, Ordering::Relaxed);
-    }
-
+    let control = app.state::<WatcherControl>();
     let stop_flag = Arc::new(AtomicBool::new(false));
-    app.manage(stop_flag.clone());
+
+    // 停止之前的 watcher，並換上新的旗標（不重複呼叫 app.manage() 以避免 panic）
+    let mut guard = control.stop_flag.lock().unwrap();
+    if let Some(old_flag) = guard.as_ref() {
+        old_flag.store(true, Ordering::Relaxed);
+    }
+    *guard = Some(stop_flag.clone());
+    drop(guard);
 
     let app_clone = app.clone();
     let flag = stop_flag.clone();
@@ -259,14 +273,16 @@ async fn start_jsonl_watcher(
                 // 讀取目標檔案的新內容（seek-based、只 alloc 新增段）
                 // Why: 原本 fs::read_to_string 每次 read 整個檔（MB 級）、系統 RAM 緊張時會
                 //      觸發 Rust allocator abort（0xc0000409）、整個 Tauri main process 倒
+                // 每次最多讀 4MB，避免單次大量輸出時 allocator abort
+                const MAX_CHUNK: u64 = 4 * 1024 * 1024;
                 if let Some(ref path) = target_file {
                     let current_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
                     if current_size > last_offset {
                         if let Ok(mut file) = fs::File::open(path) {
                             if file.seek(SeekFrom::Start(last_offset)).is_ok() {
-                                let to_read = (current_size - last_offset) as usize;
+                                let to_read = (current_size - last_offset).min(MAX_CHUNK) as usize;
                                 let mut buf = Vec::with_capacity(to_read);
-                                if file.read_to_end(&mut buf).is_ok() {
+                                if file.take(to_read as u64).read_to_end(&mut buf).is_ok() {
                                     // 從尾部回退到最後一個換行；partial line 留到下次（避免 half JSON parse fail）
                                     let safe_end = buf.iter()
                                         .rposition(|&b| b == b'\n')
@@ -301,8 +317,11 @@ async fn start_jsonl_watcher(
 /// 停止 JSONL watcher
 #[tauri::command]
 async fn stop_jsonl_watcher(app: AppHandle) -> Result<(), String> {
-    if let Some(flag) = app.try_state::<Arc<AtomicBool>>() {
-        flag.store(true, Ordering::Relaxed);
+    let control = app.state::<WatcherControl>();
+    if let Ok(guard) = control.stop_flag.lock() {
+        if let Some(flag) = guard.as_ref() {
+            flag.store(true, Ordering::Relaxed);
+        }
     }
     Ok(())
 }
@@ -347,6 +366,7 @@ fn cleanup_temp_image(file_path: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatcherControl::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_dialog::init())
