@@ -3,8 +3,12 @@ use std::path::PathBuf;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
+
+struct WatcherControl {
+    stop_flag: Mutex<Option<Arc<AtomicBool>>>,
+}
 
 /// 工作目錄路徑轉 Claude 專案目錄名稱
 fn working_dir_to_project_dir_name(working_dir: &str) -> String {
@@ -190,16 +194,21 @@ async fn start_jsonl_watcher(
     working_dir: String,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    // 停止之前的 watcher
-    if let Some(flag) = app.try_state::<Arc<AtomicBool>>() {
-        flag.store(true, Ordering::Relaxed);
+    // 停止之前的 watcher，並原子地換上新的 flag
+    // Why: app.manage() 對同一型別只能呼叫一次，多次呼叫會 panic 導致閃退；
+    //      改用 Mutex<Option<...>> 包裝，只在 run() 初始化一次，之後更新內容
+    let new_flag = Arc::new(AtomicBool::new(false));
+    {
+        let state = app.state::<WatcherControl>();
+        let mut guard = state.stop_flag.lock().unwrap();
+        if let Some(old_flag) = &*guard {
+            old_flag.store(true, Ordering::Relaxed);
+        }
+        *guard = Some(new_flag.clone());
     }
 
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    app.manage(stop_flag.clone());
-
     let app_clone = app.clone();
-    let flag = stop_flag.clone();
+    let flag = new_flag.clone();
 
     std::thread::spawn(move || {
         let mut target_file: Option<PathBuf> = None;
@@ -301,8 +310,11 @@ async fn start_jsonl_watcher(
 /// 停止 JSONL watcher
 #[tauri::command]
 async fn stop_jsonl_watcher(app: AppHandle) -> Result<(), String> {
-    if let Some(flag) = app.try_state::<Arc<AtomicBool>>() {
-        flag.store(true, Ordering::Relaxed);
+    let state = app.state::<WatcherControl>();
+    if let Ok(guard) = state.stop_flag.lock() {
+        if let Some(flag) = &*guard {
+            flag.store(true, Ordering::Relaxed);
+        }
     }
     Ok(())
 }
@@ -347,6 +359,7 @@ fn cleanup_temp_image(file_path: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatcherControl { stop_flag: Mutex::new(None) })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_dialog::init())
