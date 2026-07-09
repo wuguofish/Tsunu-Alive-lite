@@ -117,6 +117,7 @@ const terminalRef = ref<HTMLDivElement>()
 const inputText = ref('')
 const isRunning = ref(false)
 const isLaunching = ref(false)
+const showInputBar = ref(false)
 
 let terminal: Terminal
 let fitAddon: FitAddon
@@ -471,6 +472,11 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+function toggleInputBar() {
+  showInputBar.value = !showInputBar.value
+  nextTick(() => handleResize())
+}
+
 function handleResize() {
   if (fitAddon && phase.value === 'running') {
     fitAddon.fit()
@@ -666,16 +672,14 @@ onUnmounted(() => {
           <div class="avatar-wrapper">
             <img :src="avatarSrc" alt="阿宇" class="avatar-img" />
           </div>
+          <div class="busy-text" v-if="avatarState === 'thinking' || avatarState === 'working'">
+            <span>{{ busyText }}</span>
+          </div>
         </div>
       </div>
 
-      <!-- 忙碌文字 -->
-      <div class="busy-text" v-if="avatarState === 'thinking' || avatarState === 'working'">
-        <span>{{ busyText }}</span>
-      </div>
-
-      <!-- 圖片預覽列 -->
-      <div v-if="attachedImages.length > 0" class="image-preview-bar">
+      <!-- 圖片預覽列（收合式輸入框展開時才顯示）-->
+      <div v-if="showInputBar && attachedImages.length > 0" class="image-preview-bar">
         <div v-for="img in attachedImages" :key="img.id" class="image-preview-item">
           <div v-if="img.isLoading" class="image-loading">載入中...</div>
           <template v-else>
@@ -686,8 +690,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 輸入框 -->
-      <div class="input-bar">
+      <!-- 收合式輸入框 -->
+      <div v-if="showInputBar" class="input-bar">
         <textarea
           v-model="inputText"
           class="input-textarea"
@@ -707,6 +711,9 @@ onUnmounted(() => {
 
       <!-- 狀態列（唯讀參數顯示）-->
       <div class="status-bar">
+        <button class="input-toggle-btn" :class="{ active: showInputBar }" @click="toggleInputBar" title="展開/收合輸入框">
+          📎
+        </button>
         <span class="status-item">📁 {{ workingDir }}</span>
         <span class="status-item status-tag">{{ activeParams.sessionType }}</span>
         <span class="status-item status-tag">🧠 {{ activeParams.thinkingMode }}</span>
@@ -960,8 +967,7 @@ html, body, #app {
 }
 
 .terminal-view {
-  height: calc(100% + 100px);
-  margin-bottom: -100px;
+  height: 100%;
 }
 
 /* Avatar 側邊欄 */
@@ -978,13 +984,10 @@ html, body, #app {
 }
 
 .busy-text {
-  padding: 16px 16px;
+  padding: 8px 16px;
   font-size: 13px;
-  text-align: left;
-  background: #1a1b2e;
-  margin-top: -40px;
-  position: relative;
-  z-index: 5;
+  text-align: center;
+  width: 100%;
 }
 
 .busy-text span {
@@ -1178,5 +1181,24 @@ html, body, #app {
 .context-tag {
   background: #9ece6a22;
   color: #9ece6a;
+}
+
+.input-toggle-btn {
+  padding: 2px 8px;
+  background: #232436;
+  border: 1px solid #33467c;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.input-toggle-btn:hover {
+  background: #33467c;
+}
+
+.input-toggle-btn.active {
+  background: #7aa2f733;
+  border-color: #7aa2f7;
 }
 </style>
