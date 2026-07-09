@@ -6,10 +6,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
+/// 管理 JSONL watcher 的停止旗標，允許安全替換而不重複呼叫 app.manage()
 struct WatcherControl {
     stop_flag: Mutex<Option<Arc<AtomicBool>>>,
 }
 
+impl Default for WatcherControl {
+    fn default() -> Self {
+        WatcherControl { stop_flag: Mutex::new(None) }
+    }
+}
 /// 工作目錄路徑轉 Claude 專案目錄名稱
 fn working_dir_to_project_dir_name(working_dir: &str) -> String {
     let name: String = working_dir.chars()
@@ -268,14 +274,16 @@ async fn start_jsonl_watcher(
                 // 讀取目標檔案的新內容（seek-based、只 alloc 新增段）
                 // Why: 原本 fs::read_to_string 每次 read 整個檔（MB 級）、系統 RAM 緊張時會
                 //      觸發 Rust allocator abort（0xc0000409）、整個 Tauri main process 倒
+                // 每次最多讀 4MB，避免單次大量輸出時 allocator abort
+                const MAX_CHUNK: u64 = 4 * 1024 * 1024;
                 if let Some(ref path) = target_file {
                     let current_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
                     if current_size > last_offset {
                         if let Ok(mut file) = fs::File::open(path) {
                             if file.seek(SeekFrom::Start(last_offset)).is_ok() {
-                                let to_read = (current_size - last_offset) as usize;
+                                let to_read = (current_size - last_offset).min(MAX_CHUNK) as usize;
                                 let mut buf = Vec::with_capacity(to_read);
-                                if file.read_to_end(&mut buf).is_ok() {
+                                if file.take(to_read as u64).read_to_end(&mut buf).is_ok() {
                                     // 從尾部回退到最後一個換行；partial line 留到下次（避免 half JSON parse fail）
                                     let safe_end = buf.iter()
                                         .rposition(|&b| b == b'\n')
@@ -359,7 +367,7 @@ fn cleanup_temp_image(file_path: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
-        .manage(WatcherControl { stop_flag: Mutex::new(None) })
+        .manage(WatcherControl::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_dialog::init())
