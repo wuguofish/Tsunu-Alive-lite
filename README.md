@@ -67,6 +67,33 @@ Tsunu Alive Lite 是 [Tsunu Alive](https://github.com/wuguofish/Tsunu-Alive) 的
 3. 設定 Thinking Mode、Edit Mode、Discord Channel
 4. 按 🚀 啟動 Claude
 
+### LINE Channel（選用）
+
+勾選 LINE 時，本 app 會在啟動參數加上 `--mcp-config ~/.claude/line-mcp.json`，
+讓 line channel server **只存在於這個 session**。這樣其他 Claude Code session
+就不會各自載入一份、白白佔用記憶體，也不會互相搶 LINE 的處理權。
+
+設定檔格式（`~/.claude/line-mcp.json`，路徑請換成自己的）：
+
+```json
+{
+  "mcpServers": {
+    "line": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["/path/to/line-gateway/plugin-main.ts"],
+      "env": {
+        "LINE_STATE_DIR": "/path/to/.claude/channels/line",
+        "LINE_GATEWAY_URL": "ws://127.0.0.1:3456/ws"
+      }
+    }
+  }
+}
+```
+
+檔案不存在時會自動退回舊行為（沿用全域 `~/.claude.json` 裡的 MCP 設定），
+功能不受影響。
+
 ### 對話
 
 - **自訂輸入框**：在底部輸入框打字，Enter 送出，Shift+Enter 換行

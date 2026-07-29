@@ -365,6 +365,17 @@ fn cleanup_temp_image(file_path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 檔案是否存在。
+///
+/// 目前只給 LINE channel 用：前端要先確認 `~/.claude/line-mcp.json` 在不在，
+/// 才決定要不要把 `--mcp-config` 加進啟動參數——Claude Code 對於指向不存在檔案的
+/// `--mcp-config` 是直接拒絕啟動（Invalid MCP configuration），不是忽略，
+/// 所以沒有這道檢查的話，沒建過設定檔的機器一勾 LINE 就完全開不起來。
+#[tauri::command]
+fn file_exists(file_path: String) -> bool {
+    PathBuf::from(&file_path).is_file()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(WatcherControl::default())
@@ -377,6 +388,7 @@ pub fn run() {
             stop_jsonl_watcher,
             save_temp_image_png,
             cleanup_temp_image,
+            file_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

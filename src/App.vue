@@ -9,6 +9,7 @@ import type { IPty } from 'tauri-pty'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
+import { homeDir, join } from '@tauri-apps/api/path'
 
 // === 版本號（Vite define 注入的全域常數） ===
 const appVersion = __APP_VERSION__
@@ -358,6 +359,30 @@ async function launchSession() {
   }
 
   if (lineChannel.value) {
+    // line 是自架的 channel server。過去它掛在全域 ~/.claude.json 的 mcpServers，
+    // 結果這台機器上「每一個」Claude Code session 都會載入它、各自生一個 plugin
+    // 行程並連上 gateway daemon——即使只有本 app 的 session 有把它註冊成 channel
+    // （官方文件：光是在設定檔裡不夠，還要被 --channels 指名才會推播）。那些多出
+    // 來的 plugin 拿到的是「能發言、會搶 handler 座位，但收不到訊息」的半套 LINE，
+    // 白白吃記憶體又會搶走值班 session 的座位。
+    //
+    // 改成由本 app 用 --mcp-config 單獨帶進來，line 就只存在於這個 session。
+    // 設定檔放使用者家目錄而非 repo，避免把本機路徑寫死進版控。
+    //
+    // ⚠️ 一定要先確認檔案存在：Claude Code 對於指向不存在檔案的 --mcp-config
+    // 是直接拒絕啟動（Invalid MCP configuration），不是忽略掉。少了這道檢查，
+    // 沒建過設定檔的機器只要一勾 LINE，整個 session 就開不起來。
+    // 檔案不在就安靜退回舊行為（沿用全域 MCP 設定），功能不變。
+    try {
+      const mcpConfig = await join(await homeDir(), '.claude', 'line-mcp.json')
+      if (await invoke<boolean>('file_exists', { filePath: mcpConfig })) {
+        args.push('--mcp-config', mcpConfig)
+      } else {
+        console.warn(`找不到 ${mcpConfig}，改用全域 MCP 設定啟動 LINE`)
+      }
+    } catch (e) {
+      console.error('檢查 line-mcp.json 時出錯，改用全域 MCP 設定：', e)
+    }
     args.push('--dangerously-load-development-channels', 'server:line')
   }
 
