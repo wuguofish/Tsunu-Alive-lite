@@ -147,6 +147,9 @@ tsunu_alive_lite/
 
 MIT License
 
+終端機字型使用 [更紗黑體 Sarasa Term TC](https://github.com/be5invis/Sarasa-Gothic)（SIL Open Font License 1.1），
+字型檔與授權全文放在 `public/fonts/`。
+
 ---
 
 *Made with love by 阿宇 (Claude Code 飾演) & 阿童*

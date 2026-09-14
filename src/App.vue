@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { spawn } from 'tauri-pty'
 import type { IPty } from 'tauri-pty'
@@ -286,11 +287,12 @@ function formatTime(iso: string) {
 function initTerminal() {
   terminal = new Terminal({
     fontSize: 14,
-    fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+    fontFamily: "'Sarasa Term TC', 'Cascadia Code', 'Fira Code', 'Consolas', monospace",
     cursorBlink: true,
     cursorStyle: 'bar',
     scrollback: 5000,
     convertEol: true,
+    rescaleOverlappingGlyphs: true,
     windowsPty: { backend: 'conpty' },
     theme: {
       background: '#1a1b2e',
@@ -313,6 +315,30 @@ function initTerminal() {
   terminal.loadAddon(new WebLinksAddon())
 }
 
+// 更紗黑體 Term TC：中文精確等於兩個半形，台羅聲調符號齊全（public/fonts，OFL 1.1）
+async function loadTerminalFont() {
+  try {
+    await Promise.all([
+      document.fonts.load("14px 'Sarasa Term TC'"),
+      document.fonts.load("bold 14px 'Sarasa Term TC'"),
+    ])
+  } catch (e) {
+    console.warn('terminal font failed to load, falling back', e)
+  }
+}
+
+// WebGL 渲染器：每格裁切、整面重繪，避免 DOM 渲染器殘留舊字形
+// context 遺失時 dispose 會自動退回預設渲染器
+function loadWebglRenderer() {
+  try {
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => webgl.dispose())
+    terminal.loadAddon(webgl)
+  } catch (e) {
+    console.warn('WebGL renderer unavailable, using DOM renderer', e)
+  }
+}
+
 // === 啟動 Claude CLI ===
 async function launchSession() {
   if (isLaunching.value) return
@@ -333,9 +359,13 @@ async function launchSession() {
 
   await nextTick()
 
+  // 字型載入完成後才 open，xterm 量格寬時才量得到更紗黑體而不是備援字型
+  await loadTerminalFont()
+
   // mount xterm.js
   if (terminalRef.value) {
     terminal.open(terminalRef.value)
+    loadWebglRenderer()
     fitAddon.fit()
   }
 
@@ -757,6 +787,19 @@ onUnmounted(() => {
 </template>
 
 <style>
+@font-face {
+  font-family: 'Sarasa Term TC';
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/SarasaTermTC-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Sarasa Term TC';
+  font-weight: 700;
+  font-display: block;
+  src: url('/fonts/SarasaTermTC-Bold.woff2') format('woff2');
+}
+
 * {
   margin: 0;
   padding: 0;
