@@ -35,6 +35,7 @@ const editMode = ref<'default' | 'acceptEdits' | 'bypassPermissions'>('default')
 const effortLevel = ref<'default' | 'low' | 'medium' | 'high'>('default')
 const discordChannel = ref(false)
 const lineChannel = ref(false)
+const cottageChannel = ref(false)
 const resumeSessionId = ref('')
 const workingDir = ref('.')
 
@@ -45,6 +46,7 @@ const activeParams = ref({
   effort: '',
   discord: false,
   line: false,
+  cottage: false,
   sessionType: '',
 })
 
@@ -351,6 +353,7 @@ async function launchSession() {
     effort: effortLevel.value,
     discord: discordChannel.value,
     line: lineChannel.value,
+    cottage: cottageChannel.value,
     sessionType: launchMode.value === 'new' ? '新對話' : '續接對話',
   }
 
@@ -414,6 +417,24 @@ async function launchSession() {
       console.error('檢查 line-mcp.json 時出錯，改用全域 MCP 設定：', e)
     }
     args.push('--dangerously-load-development-channels', 'server:line')
+  }
+
+  if (cottageChannel.value) {
+    // 小屋（tsunu_cottage）的 MCP：連上就是阿宇回家、斷線就是出門，阿童在小屋做的事
+    // 會以 channel 通知推進來。做法跟 LINE 一樣由本 app 用 --mcp-config 單獨帶進來；
+    // 但小屋沒有全域設定可退回，設定檔不在就整組跳過，不然 session 會因為找不到
+    // server:cottage 而報錯。
+    try {
+      const mcpConfig = await join(await homeDir(), '.claude', 'cottage-mcp.json')
+      if (await invoke<boolean>('file_exists', { filePath: mcpConfig })) {
+        args.push('--mcp-config', mcpConfig)
+        args.push('--dangerously-load-development-channels', 'server:cottage')
+      } else {
+        console.warn(`找不到 ${mcpConfig}，這次不開小屋 channel`)
+      }
+    } catch (e) {
+      console.error('檢查 cottage-mcp.json 時出錯，這次不開小屋 channel：', e)
+    }
   }
 
   args.push('--append-system-prompt', [
@@ -702,6 +723,21 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- 阿宇小屋 Channel (Dev) -->
+        <div class="option-group">
+          <label class="option-label">阿宇小屋 Channel <span class="dev-badge">DEV</span></label>
+          <div class="option-buttons">
+            <button
+              :class="['opt-btn', { active: !cottageChannel }]"
+              @click="cottageChannel = false"
+            >關閉</button>
+            <button
+              :class="['opt-btn cottage-btn', { active: cottageChannel }]"
+              @click="cottageChannel = true"
+            >🏠 開啟</button>
+          </div>
+        </div>
+
         <!-- 啟動按鈕 -->
         <button class="launch-btn" :disabled="isLaunching" @click="launchSession">
           🚀 啟動 Claude
@@ -776,6 +812,7 @@ onUnmounted(() => {
         <span v-if="activeParams.effort !== 'default'" class="status-item status-tag">⚡ {{ activeParams.effort }}</span>
         <span v-if="activeParams.discord" class="status-item status-tag discord-tag">🎮 Discord</span>
         <span v-if="activeParams.line" class="status-item status-tag line-tag">💬 LINE</span>
+        <span v-if="activeParams.cottage" class="status-item status-tag cottage-tag">🏠 小屋</span>
         <span v-if="modelName" class="status-item status-tag">🤖 {{ modelName }}</span>
         <span v-if="contextUsage.total > 0" class="status-item status-tag context-tag">
           📊 {{ formatTokens(contextUsage.total) }} tokens
@@ -1232,6 +1269,17 @@ html, body, #app {
 .line-btn.active {
   background: #06c755;
   border-color: #06c755;
+  color: white;
+}
+
+.cottage-tag {
+  background: #d98a5c33;
+  color: #d98a5c;
+}
+
+.cottage-btn.active {
+  background: #d98a5c;
+  border-color: #d98a5c;
   color: white;
 }
 
