@@ -274,6 +274,59 @@ function selectSession(session: SessionEntry) {
   resumeSessionId.value = session.sessionId
 }
 
+/**
+ * 把命令列參數套進啟動設定，讓腳本不必點畫面就能開 session，例如：
+ *   tsunu-alive-lite.exe --resume <id> --cwd D:\tsunu_plan --permission-mode bypassPermissions --discord
+ * 帶了任何參數就回傳 true，呼叫端會直接啟動；不認得的參數寫進 console 後略過。
+ */
+function applyLaunchArgs(argv: string[]): boolean {
+  const pick = <T extends string>(value: string | undefined, allowed: readonly T[]) =>
+    allowed.find(option => option === value)
+
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i]
+    const value = argv[i + 1]
+    switch (flag) {
+      case '--resume':
+        launchMode.value = 'resume'
+        resumeSessionId.value = value ?? ''
+        i++
+        break
+      case '--continue':
+        launchMode.value = 'resume'
+        break
+      case '--cwd':
+        workingDir.value = value ?? workingDir.value
+        i++
+        break
+      case '--permission-mode':
+        editMode.value = pick(value, ['default', 'acceptEdits', 'bypassPermissions'] as const) ?? editMode.value
+        i++
+        break
+      case '--effort':
+        effortLevel.value = pick(value, ['default', 'low', 'medium', 'high'] as const) ?? effortLevel.value
+        i++
+        break
+      case '--thinking':
+        thinkingMode.value = pick(value, ['adaptive', 'enabled', 'disabled'] as const) ?? thinkingMode.value
+        i++
+        break
+      case '--discord':
+        discordChannel.value = true
+        break
+      case '--line':
+        lineChannel.value = true
+        break
+      case '--cottage':
+        cottageChannel.value = true
+        break
+      default:
+        console.warn(`不認得的啟動參數：${flag}`)
+    }
+  }
+  return argv.length > 0
+}
+
 function formatTime(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -565,7 +618,9 @@ onMounted(async () => {
   initTerminal()
   window.addEventListener('resize', handleResize)
   startBlinkLoop()
+  const autoLaunch = applyLaunchArgs(await invoke<string[]>('launch_args'))
   await loadSessions()
+  if (autoLaunch) await launchSession()
 })
 
 onUnmounted(() => {

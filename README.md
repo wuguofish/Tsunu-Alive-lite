@@ -115,6 +115,27 @@ session 結束就是出門，在小屋裡做的事會以 channel 通知推進對
 
 小屋沒有全域設定可退回，檔案不存在時這次啟動就不開小屋 channel。
 
+### 用命令列直接啟動（選用）
+
+帶任何參數啟動時，會跳過設定畫面、照參數直接開 session，適合開機腳本用來接回既有對話：
+
+```powershell
+& "$env:LOCALAPPDATA\Tsunu Alive Lite\tsunu-alive-lite.exe" `
+  --resume <session-id> --cwd D:\my-project --permission-mode bypassPermissions --discord
+```
+
+| 參數 | 對應的啟動設定 |
+|------|----------------|
+| `--resume <id>` | 續接指定 session |
+| `--continue` | 續接工作目錄最近的 session |
+| `--cwd <路徑>` | 工作目錄 |
+| `--permission-mode <default\|acceptEdits\|bypassPermissions>` | 編輯模式 |
+| `--effort <default\|low\|medium\|high>` | Effort |
+| `--thinking <adaptive\|enabled\|disabled>` | Thinking |
+| `--discord`／`--line`／`--cottage` | 開啟對應的 Channel |
+
+不帶參數時跟以前一樣顯示設定畫面。
+
 ### 對話
 
 - **自訂輸入框**：在底部輸入框打字，Enter 送出，Shift+Enter 換行

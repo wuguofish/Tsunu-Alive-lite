@@ -376,6 +376,12 @@ fn file_exists(file_path: String) -> bool {
     PathBuf::from(&file_path).is_file()
 }
 
+/// 啟動本 app 時帶的命令列參數（不含執行檔路徑），讓腳本能直接指定要續接的 session。
+#[tauri::command]
+fn launch_args() -> Vec<String> {
+    std::env::args().skip(1).collect()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(WatcherControl::default())
@@ -389,6 +395,7 @@ pub fn run() {
             save_temp_image_png,
             cleanup_temp_image,
             file_exists,
+            launch_args,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
