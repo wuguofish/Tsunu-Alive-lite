@@ -22,7 +22,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Tsunu Alive Lite $GITHUB_REF_NAME" --notes-file - <<'NOTES'
+          gh api -X POST "repos/$GITHUB_REPOSITORY/releases"             -f tag_name="$GITHUB_REF_NAME" -f name="Tsunu Alive Lite $GITHUB_REF_NAME" -F draft=true             -f body="$(cat <<'NOTES'
           ## Tsunu Alive Lite
 
           輕量版 — xterm.js + Claude CLI 原生體驗
@@ -39,7 +39,7 @@ jobs:
           ### Linux
           - 下載 `.AppImage`、`.deb` 或 `.rpm`
           NOTES
-          echo "release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq "map(select(.tag_name == \"$GITHUB_REF_NAME\" and .draft)) | first | .id")" >> "$GITHUB_OUTPUT"
+          )" --jq '"release_id=\(.id)"' >> "$GITHUB_OUTPUT"
 
   build:
     needs: create-release
@@ -131,4 +131,6 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           uploadWorkflowArtifacts: true
+          # tauri-action v1 預設 releaseDraft 是 false，會把上傳到的 release 直接發佈；明寫成草稿，發佈留給人按。
+          releaseDraft: true
           args: --target ${{ matrix.target }}
