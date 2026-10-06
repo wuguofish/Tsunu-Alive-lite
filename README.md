@@ -27,7 +27,7 @@ Tsunu Alive Lite 是 [Tsunu Alive](https://github.com/wuguofish/Tsunu-Alive) 的
 ## 特色功能
 
 - **原生 Claude CLI 體驗** — xterm.js 終端機，所有 CLI 功能直接可用
-- **阿宇 Avatar** — JSONL 監測驅動的表情同步（idle、thinking、working、error）
+- **阿宇 Avatar** — 由內附的 [tsunu-avatar mod](https://github.com/Tsun-u/tsunu-pet) 直接回報 Claude Code 的狀態，表情跟著切換（待機、思考中、工作中、等你回覆、出錯、完成）
 - **忙碌狀態文字** — 阿宇風格的隨機提示（推眼鏡中、泡咖啡中、Debug 中...）
 - **啟動設定畫面** — 選擇新對話/續接、Thinking Mode、Edit Mode、Discord Channel
 - **Session 管理** — 瀏覽歷史對話，點擊續接
@@ -177,8 +177,10 @@ tsunu_alive_lite/
 │   └── main.ts
 ├── src-tauri/                  # Rust 後端
 │   └── src/
-│       ├── lib.rs              # Session 載入、JSONL watcher
+│       ├── lib.rs              # Session 載入、JSONL watcher（context 用量、模型名稱）
+│       ├── mod_state.rs        # 接收 mod 回報的狀態，轉成立繪事件
 │       └── main.rs
+├── tsunu-avatar/               # 內附的 Claude Code mod，來源是 Tsun-u/tsunu-pet 的 mod/（更新時整份同步過來）
 ├── public/character/           # 阿宇角色圖片（26 張）
 └── .github/workflows/          # CI/CD
 ```

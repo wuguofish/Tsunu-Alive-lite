@@ -1,6 +1,6 @@
 [package]
 name = "tsunu-alive-lite"
-version = "0.1.9"
+version = "0.1.10"
 description = "Tsunu Alive Lite - 阿宇陪你寫程式（輕量版）"
 authors = ["阿童 ATone and her Claude Code (楊竣宇 AYu)"]
 edition = "2021"
@@ -22,3 +22,4 @@ chrono = "0.4"
 dirs = "5"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["sync"] }
+tiny_http = "0.12"

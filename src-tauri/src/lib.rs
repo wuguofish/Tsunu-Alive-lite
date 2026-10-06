@@ -1,3 +1,5 @@
+mod mod_state;
+
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::fs;
@@ -127,22 +129,6 @@ fn process_jsonl_line(line: &str, app: &AppHandle) {
                 None => return,
             };
 
-            // Avatar 狀態：只看最後一個 content item 決定終局狀態，整則 message emit 一次
-            // Why: 原本每個 content item 各 emit 一次 IPC event、重 message 容易壓垮 WebView2
-            if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
-                if let Some(last_item) = content.last() {
-                    let state = match last_item.get("type").and_then(|t| t.as_str()).unwrap_or("") {
-                        "thinking" => Some("thinking"),
-                        "tool_use" => Some("asking"),
-                        "text" => Some("idle"),
-                        _ => None,
-                    };
-                    if let Some(s) = state {
-                        let _ = app.emit("avatar-state", s);
-                    }
-                }
-            }
-
             // Model 名稱
             if let Some(model) = message.get("model").and_then(|m| m.as_str()) {
                 let _ = app.emit("model-info", model.to_string());
@@ -164,19 +150,6 @@ fn process_jsonl_line(line: &str, app: &AppHandle) {
                         "cacheCreate": cache_create,
                         "total": total,
                     }));
-                }
-            }
-        }
-        "user" => {
-            if let Some(arr) = json.get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for item in arr {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                        let _ = app.emit("avatar-state", "working");
-                        return;
-                    }
                 }
             }
         }
@@ -388,6 +361,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let state = mod_state::start(app.handle());
+            app.manage(state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             load_sessions,
             start_jsonl_watcher,
@@ -396,6 +374,7 @@ pub fn run() {
             cleanup_temp_image,
             file_exists,
             launch_args,
+            mod_state::mod_launch_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

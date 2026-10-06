@@ -490,6 +490,22 @@ async function launchSession() {
     }
   }
 
+  // 立繪狀態由內附的 tsunu-avatar mod 回報：mod 把狀態送到後端開的收件埠（TSUNU_STATE_URL），
+  // 側邊欄關掉（TSUNU_PANE=0），因為本 app 自己有立繪。拿不到 mod 時照常啟動，立繪停在待機。
+  const modEnv: Record<string, string> = {}
+  try {
+    const mod = await invoke<{ stateUrl: string | null; pluginDir: string | null }>('mod_launch_info')
+    if (mod.stateUrl && mod.pluginDir) {
+      args.push('--plugin-dir', mod.pluginDir)
+      modEnv.TSUNU_STATE_URL = mod.stateUrl
+      modEnv.TSUNU_PANE = '0'
+    } else {
+      console.warn('沒有內附的 tsunu-avatar mod 或收件埠，立繪不會跟著狀態變化')
+    }
+  } catch (e) {
+    console.error('取得 mod 設定時出錯：', e)
+  }
+
   args.push('--append-system-prompt', [
     'You are running inside "tsunu_alive_lite" (阿宇陪你寫程式), a desktop GUI application.',
     '',
@@ -519,7 +535,7 @@ async function launchSession() {
       cols: terminal.cols,
       rows: terminal.rows,
       cwd: workingDir.value,
-      env: { CI: 'true' },
+      env: { CI: 'true', ...modEnv },
     })
 
     isRunning.value = true
