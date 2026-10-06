@@ -10,7 +10,41 @@ permissions:
   contents: write
 
 jobs:
+  # 先建好唯一一份草稿 release，各平台的打包 job 都上傳到同一份。
+  # 不這樣做的話，各 job 會同時各建一份，結果出現重複的 release。
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Tsunu Alive Lite $GITHUB_REF_NAME" --notes-file - <<'NOTES'
+          ## Tsunu Alive Lite
+
+          輕量版 — xterm.js + Claude CLI 原生體驗
+
+          ### 前提條件
+          請先安裝 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview)。
+
+          ### Windows
+          - 下載 `.exe` (NSIS 安裝檔) 或 `.msi` (MSI 安裝檔)
+
+          ### macOS
+          - 下載 `.dmg` 並拖到應用程式資料夾
+
+          ### Linux
+          - 下載 `.AppImage`、`.deb` 或 `.rpm`
+          NOTES
+          echo "release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq "map(select(.tag_name == \"$GITHUB_REF_NAME\" and .draft)) | first | .id")" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: create-release
+    # 手動執行時沒有 create-release（被略過），打包照樣進行。
+    if: ${{ !failure() && !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -21,15 +55,23 @@ jobs:
             target: aarch64-apple-darwin
           - platform: macos-15
             target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -79,32 +121,14 @@ jobs:
           "
 
           echo "Version synced to: $VERSION"
-          echo "  tauri.conf.json: $(grep '"version"' src-tauri/tauri.conf.json)"
-          echo "  package.json: $(grep '"version"' package.json | head -1)"
-          echo "  Cargo.toml: $(grep '^version' src-tauri/Cargo.toml)"
 
-      # 建置 Tauri App
+      # 建置 Tauri App：推 v* tag 時上傳到 create-release 建好的草稿；手動執行只打包，安裝檔放在這次 run 的 artifacts。
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ""
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Tsunu Alive Lite ${{ github.ref_name }}"
-          releaseBody: |
-            ## Tsunu Alive Lite
-
-            輕量版 — xterm.js + Claude CLI 原生體驗
-
-            ### 前提條件
-            請先安裝 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview)。
-
-            ### Windows
-            - 下載 `.exe` (NSIS 安裝檔) 或 `.msi` (MSI 安裝檔)
-
-            ### macOS
-            - 下載 `.dmg` 並拖到應用程式資料夾
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          uploadWorkflowArtifacts: true
           args: --target ${{ matrix.target }}

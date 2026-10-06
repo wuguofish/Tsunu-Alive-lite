@@ -51,6 +51,7 @@ Tsunu Alive Lite 是 [Tsunu Alive](https://github.com/wuguofish/Tsunu-Alive) 的
 | Windows | `.exe`（NSIS）或 `.msi` |
 | macOS Apple Silicon | `.dmg` |
 | macOS Intel | `.dmg` |
+| Linux | `.AppImage`、`.deb` 或 `.rpm` |
 
 > **Windows**：安裝時若出現 SmartScreen 警告，按「仍要執行」即可。
 >
