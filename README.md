@@ -94,27 +94,6 @@ Tsunu Alive Lite 是 [Tsunu Alive](https://github.com/wuguofish/Tsunu-Alive) 的
 檔案不存在時會自動退回舊行為（沿用全域 `~/.claude.json` 裡的 MCP 設定），
 功能不受影響。
 
-### 阿宇小屋 Channel（選用）
-
-勾選小屋時，本 app 會加上 `--mcp-config ~/.claude/cottage-mcp.json` 與
-`--dangerously-load-development-channels server:cottage`：連上就是阿宇回家、
-session 結束就是出門，在小屋裡做的事會以 channel 通知推進對話。
-
-設定檔格式（`~/.claude/cottage-mcp.json`，路徑請換成自己的）：
-
-```json
-{
-  "mcpServers": {
-    "cottage": {
-      "command": "node",
-      "args": ["/path/to/tsunu_cottage/dist/src/mcp.js"]
-    }
-  }
-}
-```
-
-小屋沒有全域設定可退回，檔案不存在時這次啟動就不開小屋 channel。
-
 ### 用命令列直接啟動（選用）
 
 帶任何參數啟動時，會跳過設定畫面、照參數直接開 session，適合開機腳本用來接回既有對話：
@@ -132,7 +111,7 @@ session 結束就是出門，在小屋裡做的事會以 channel 通知推進對
 | `--permission-mode <default\|acceptEdits\|bypassPermissions>` | 編輯模式 |
 | `--effort <default\|low\|medium\|high>` | Effort |
 | `--thinking <adaptive\|enabled\|disabled>` | Thinking |
-| `--discord`／`--line`／`--cottage` | 開啟對應的 Channel |
+| `--discord`／`--line` | 開啟對應的 Channel |
 
 不帶參數時跟以前一樣顯示設定畫面。
 

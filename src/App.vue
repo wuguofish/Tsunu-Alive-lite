@@ -36,6 +36,8 @@ const effortLevel = ref<'default' | 'low' | 'medium' | 'high'>('default')
 const discordChannel = ref(false)
 const lineChannel = ref(false)
 const cottageChannel = ref(false)
+// 小屋還沒對外開放：本機有 ~/.claude/cottage-mcp.json 才顯示這個選項
+const cottageAvailable = ref(false)
 const resumeSessionId = ref('')
 const workingDir = ref('.')
 
@@ -634,6 +636,12 @@ onMounted(async () => {
   initTerminal()
   window.addEventListener('resize', handleResize)
   startBlinkLoop()
+  try {
+    const cottageConfig = await join(await homeDir(), '.claude', 'cottage-mcp.json')
+    cottageAvailable.value = await invoke<boolean>('file_exists', { filePath: cottageConfig })
+  } catch (e) {
+    console.error('檢查 cottage-mcp.json 時出錯：', e)
+  }
   const autoLaunch = applyLaunchArgs(await invoke<string[]>('launch_args'))
   await loadSessions()
   if (autoLaunch) await launchSession()
@@ -795,7 +803,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 阿宇小屋 Channel (Dev) -->
-        <div class="option-group">
+        <div v-if="cottageAvailable" class="option-group">
           <label class="option-label">阿宇小屋 Channel <span class="dev-badge">DEV</span></label>
           <div class="option-buttons">
             <button
