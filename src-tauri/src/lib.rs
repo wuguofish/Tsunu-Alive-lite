@@ -1,4 +1,8 @@
+mod crash_log;
 mod mod_state;
+
+#[global_allocator]
+static GLOBAL: crash_log::LoggingAllocator = crash_log::LoggingAllocator;
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -165,6 +169,36 @@ fn process_jsonl_line(line: &str, app: &AppHandle) {
     }
 }
 
+/// 決定這次讀到的 buf 裡要處理哪一段完整的行，以及 offset 要往前推多少。
+///
+/// 結尾沒有換行的半行留到下次讀（避免解析半截 JSON）。但如果整段都讀滿了還找不到換行，
+/// 代表單行比一次讀取的上限還長，等下去只會每次重讀同一段；這時跳過這一行，
+/// 用 `skipping` 記住「還在跳」，下一段讀到換行為止都丟掉。
+fn split_complete_lines(
+    buf: &[u8],
+    chunk_full: bool,
+    skipping: &mut bool,
+) -> (std::ops::Range<usize>, usize) {
+    let mut start = 0;
+    if *skipping {
+        match buf.iter().position(|&b| b == b'\n') {
+            Some(i) => {
+                start = i + 1;
+                *skipping = false;
+            }
+            None => return (0..0, buf.len()),
+        }
+    }
+    match buf[start..].iter().rposition(|&b| b == b'\n') {
+        Some(i) => (start..start + i + 1, start + i + 1),
+        None if chunk_full && start == 0 => {
+            *skipping = true;
+            (0..0, buf.len())
+        }
+        None => (start..start, start),
+    }
+}
+
 /// 啟動 JSONL watcher（背景輪詢）
 /// session_id: 已知的 session ID（續接對話時有），None 表示新對話（等新檔案出現）
 #[tauri::command]
@@ -192,6 +226,7 @@ async fn start_jsonl_watcher(
     std::thread::spawn(move || {
         let mut target_file: Option<PathBuf> = None;
         let mut last_offset: u64 = 0;
+        let mut skipping_oversized_line = false;
 
         // 記錄啟動前已存在的檔案（用於偵測新檔案）
         let mut existing_files: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -237,6 +272,7 @@ async fn start_jsonl_watcher(
                             {
                                 target_file = Some(path.clone());
                                 last_offset = 0; // 新檔案，從頭讀
+                                skipping_oversized_line = false;
                                 eprintln!("👀 New session JSONL detected: {:?}", path.file_name());
                                 break;
                             }
@@ -257,26 +293,23 @@ async fn start_jsonl_watcher(
                                 let to_read = (current_size - last_offset).min(MAX_CHUNK) as usize;
                                 let mut buf = Vec::with_capacity(to_read);
                                 if file.take(to_read as u64).read_to_end(&mut buf).is_ok() {
-                                    // 從尾部回退到最後一個換行；partial line 留到下次（避免 half JSON parse fail）
-                                    let safe_end = buf.iter()
-                                        .rposition(|&b| b == b'\n')
-                                        .map(|i| i + 1)
-                                        .unwrap_or(0);
-                                    if safe_end > 0 {
-                                        if let Ok(text) = std::str::from_utf8(&buf[..safe_end]) {
-                                            for line in text.lines() {
-                                                if line.trim().is_empty() { continue; }
-                                                process_jsonl_line(line, &app_clone);
-                                            }
+                                    let chunk_full = buf.len() as u64 == MAX_CHUNK;
+                                    let (lines, consumed) =
+                                        split_complete_lines(&buf, chunk_full, &mut skipping_oversized_line);
+                                    if let Ok(text) = std::str::from_utf8(&buf[lines]) {
+                                        for line in text.lines() {
+                                            if line.trim().is_empty() { continue; }
+                                            process_jsonl_line(line, &app_clone);
                                         }
-                                        last_offset += safe_end as u64;
                                     }
+                                    last_offset += consumed as u64;
                                 }
                             }
                         }
                     } else if current_size < last_offset {
                         // 檔案被 truncate / rotate、reset offset 從頭讀
                         last_offset = 0;
+                        skipping_oversized_line = false;
                     }
                 }
             }
@@ -356,6 +389,7 @@ fn launch_args() -> Vec<String> {
 }
 
 pub fn run() {
+    crash_log::init();
     tauri::Builder::default()
         .manage(WatcherControl::default())
         .plugin(tauri_plugin_opener::init())
@@ -378,4 +412,47 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_trailing_partial_line_for_next_read() {
+        let mut skipping = false;
+        let (lines, consumed) = split_complete_lines(b"{\"a\":1}\n{\"b\"", false, &mut skipping);
+        assert_eq!((lines, consumed), (0..8, 8));
+        assert!(!skipping);
+    }
+
+    #[test]
+    fn waits_when_short_read_has_no_newline() {
+        let mut skipping = false;
+        assert_eq!(split_complete_lines(b"{\"half", false, &mut skipping), (0..0, 0));
+        assert!(!skipping);
+    }
+
+    #[test]
+    fn skips_line_longer_than_a_full_chunk() {
+        let mut skipping = false;
+        assert_eq!(split_complete_lines(b"xxxxxxxx", true, &mut skipping), (0..0, 8));
+        assert!(skipping);
+
+        // 下一段還沒看到換行：整段丟掉
+        assert_eq!(split_complete_lines(b"yyyy", true, &mut skipping), (0..0, 4));
+        assert!(skipping);
+
+        // 讀到超長行的結尾：換行之前丟掉，之後的完整行照常處理
+        let (lines, consumed) = split_complete_lines(b"zz\n{\"ok\":1}\n{\"next", false, &mut skipping);
+        assert_eq!((lines, consumed), (3..12, 12));
+        assert!(!skipping);
+    }
+
+    #[test]
+    fn after_skipping_waits_on_partial_line() {
+        let mut skipping = true;
+        assert_eq!(split_complete_lines(b"tail\n{\"half", true, &mut skipping), (5..5, 5));
+        assert!(!skipping);
+    }
 }

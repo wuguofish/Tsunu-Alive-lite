@@ -134,3 +134,34 @@ jobs:
           # tauri-action v1 預設 releaseDraft 是 false，會把上傳到的 release 直接發佈；明寫成草稿，發佈留給人按。
           releaseDraft: true
           args: --target ${{ matrix.target }}
+
+      # 安裝檔不含 pdb，當機傾印檔沒有它就讀不出函式名稱與行號。每次打包都另外留一份：
+      # 推 tag 時附在草稿 release 上，手動執行時放在這次 run 的 artifacts。
+      - name: Collect Windows debug symbols
+        if: startsWith(matrix.platform, 'windows')
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          PDB_NAME="tsunu-alive-lite_${VERSION}_${{ matrix.target }}.pdb"
+          cp "src-tauri/target/${{ matrix.target }}/release/tsunu_alive_lite.pdb" "$PDB_NAME"
+          echo "PDB_NAME=$PDB_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload Windows debug symbols to release
+        if: startsWith(matrix.platform, 'windows') && needs.create-release.outputs.release_id
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$PDB_NAME" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$PDB_NAME"
+
+      - name: Upload Windows debug symbols as artifact
+        if: startsWith(matrix.platform, 'windows')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PDB_NAME }}
+          path: ${{ env.PDB_NAME }}
